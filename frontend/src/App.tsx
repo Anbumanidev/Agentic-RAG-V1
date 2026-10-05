@@ -5,7 +5,7 @@ import { Composer } from './components/Composer'
 import { KnowledgePanel } from './components/KnowledgePanel'
 import { MessageBubble } from './components/MessageBubble'
 import { Sidebar } from './components/Sidebar'
-import type { Health, KnowledgeDocument, Message, Session, StreamEvent } from './types'
+import type { Attachment, Health, KnowledgeDocument, Message, Session, StreamEvent } from './types'
 
 const DEFAULT_ACCEPT = '.pdf,.docx,.txt,.md,.csv,.json,.html,.htm'
 
@@ -149,14 +149,39 @@ export default function App() {
     }
   }
 
+  const showAttachment = async (sid: string, attachments: Attachment[], load: () => Promise<Message | null>) => {
+    const tempId = crypto.randomUUID()
+    const pendingMsg: Message = {
+      id: tempId,
+      role: 'user',
+      content: '',
+      meta: { attachments },
+      pending: true,
+    }
+    if (activeIdRef.current === sid) setMessages((m) => [...m, pendingMsg])
+    try {
+      const saved = await load()
+      setMessages((list) => list.flatMap((m) => (m.id === tempId ? (saved ? [saved] : []) : [m])))
+    } catch (e) {
+      setMessages((list) => list.filter((m) => m.id !== tempId))
+      throw e
+    }
+  }
+
   const uploadFiles = async (files: File[]) => {
     setBusy(true)
     try {
       const sid = await ensureSession()
-      const res = await api.uploadFiles(sid, files)
+      const placeholders = files.map((f) => ({ id: f.name, title: f.name, source: f.name, kind: 'file' as const }))
+      let errors: string[] = []
+      await showAttachment(sid, placeholders, async () => {
+        const res = await api.uploadFiles(sid, files)
+        errors = res.errors
+        return res.message
+      })
       await refreshDocuments(sid)
-      const names = res.documents.map((d) => d.title).join(', ')
-      notify(`Loaded ${names}${res.errors.length ? ` — errors: ${res.errors.join('; ')}` : ''}`)
+      refreshSessions()
+      if (errors.length) notify(`Some files failed: ${errors.join('; ')}`)
     } catch (e) {
       notify(`Upload failed: ${(e as Error).message}`)
     } finally {
@@ -168,9 +193,12 @@ export default function App() {
     setBusy(true)
     try {
       const sid = await ensureSession()
-      const doc = await api.addUrl(sid, url)
+      await showAttachment(sid, [{ id: url, title: url, source: url, kind: 'url' }], async () => {
+        const doc = await api.addUrl(sid, url)
+        return doc.message
+      })
       await refreshDocuments(sid)
-      notify(`Loaded "${doc.title}" (${doc.chunks} chunks)`)
+      refreshSessions()
     } catch (e) {
       notify(`Could not load URL: ${(e as Error).message}`)
     } finally {

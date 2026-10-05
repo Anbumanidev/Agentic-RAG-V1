@@ -71,6 +71,20 @@ def create_app(services: Services | None = None) -> FastAPI:
             "supported_files": sorted(SUPPORTED_EXTENSIONS),
         }
 
+    def record_attachments(s: Services, session_id: str, docs: list[dict], label: str) -> dict:
+        """Log loaded documents as a chat message so they appear in the conversation and memory."""
+        session = s.memory.get_session(session_id)
+        if session["title"] == "New chat" and not s.memory.get_messages(session_id):
+            s.memory.rename_session(session_id, docs[0]["title"][:60])
+        meta = {
+            "attachments": [
+                {k: d[k] for k in ("id", "title", "source", "kind", "chunks")} for d in docs
+            ]
+        }
+        content = f"{label}: " + ", ".join(d["title"] for d in docs)
+        message_id = s.memory.add_message(session_id, "user", content, meta)
+        return {"id": message_id, "role": "user", "content": content, "meta": meta}
+
     # Sessions -------------------------------------------------------------
     @app.get("/api/sessions")
     async def list_sessions(request: Request):
@@ -117,6 +131,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         except LoaderError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         doc.pop("preview", None)
+        doc["message"] = record_attachments(svc(request), session_id, [doc], "Loaded URL")
         return doc
 
     @app.post("/api/sessions/{session_id}/files", status_code=201)
@@ -143,7 +158,12 @@ def create_app(services: Services | None = None) -> FastAPI:
                 errors.append(f"{name}: {exc}")
         if not documents and errors:
             raise HTTPException(status_code=400, detail="; ".join(errors))
-        return {"documents": documents, "errors": errors}
+        message = (
+            record_attachments(svc(request), session_id, documents, "Attached files")
+            if documents
+            else None
+        )
+        return {"documents": documents, "errors": errors, "message": message}
 
     @app.delete("/api/sessions/{session_id}/documents/{document_id}", status_code=204)
     async def delete_document(request: Request, session_id: str, document_id: str):

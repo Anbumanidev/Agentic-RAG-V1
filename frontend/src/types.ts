@@ -1,4 +1,4 @@
-export type Route = 'ingest_only' | 'conversation' | 'knowledge' | 'web' | null
+export type Route = 'ingest_only' | 'conversation' | 'knowledge' | 'web' | 'documents' | null
 
 export interface Session {
   id: string
@@ -40,8 +40,11 @@ export interface MessageMeta {
   route?: Route
   sources?: Source[]
   steps?: Step[]
-  ingested?: Pick<KnowledgeDocument, 'id' | 'title' | 'source' | 'kind' | 'chunks'>[]
+  ingested?: Attachment[]
+  attachments?: Attachment[]
 }
+
+export type Attachment = Pick<KnowledgeDocument, 'id' | 'title' | 'source' | 'kind'> & { chunks?: number }
 
 export interface Message {
   id: string

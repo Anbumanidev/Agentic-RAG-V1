@@ -92,6 +92,8 @@ def default_responder(messages) -> str:
     system = messages[0].content
     if "web search results" in system:
         return "From the web: Olympus [1]."
+    if "summary/overview of their loaded documents" in system:
+        return "Summary of your documents [1]."
     if "loaded URLs and files" in system:
         return "From your documents: the secret code is 42 [1]."
     if "just loaded new content" in system:

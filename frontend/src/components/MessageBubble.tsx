@@ -13,13 +13,14 @@ import {
   Loader2,
   User,
 } from 'lucide-react'
-import type { Message, Route, Source } from '../types'
+import type { Attachment, Message, Route, Source } from '../types'
 
 const ROUTE_BADGE: Record<string, { label: string; className: string; icon: typeof Globe }> = {
   knowledge: { label: 'Knowledge base', className: 'bg-emerald-500/15 text-emerald-300', icon: BookOpen },
   web: { label: 'Web research', className: 'bg-sky-500/15 text-sky-300', icon: Globe },
   conversation: { label: 'Memory', className: 'bg-violet-500/15 text-violet-300', icon: Brain },
   ingest_only: { label: 'Content loaded', className: 'bg-amber-500/15 text-amber-300', icon: Link2 },
+  documents: { label: 'Documents', className: 'bg-teal-500/15 text-teal-300', icon: FileText },
 }
 
 function RouteBadge({ route }: { route?: Route }) {
@@ -82,11 +83,52 @@ function SourceList({ sources }: { sources: Source[] }) {
   )
 }
 
+function AttachmentList({ attachments, pending }: { attachments: Attachment[]; pending?: boolean }) {
+  return (
+    <div className="flex max-w-[80%] flex-wrap justify-end gap-2">
+      {attachments.map((a) => {
+        const Icon = a.kind === 'url' ? Link2 : FileText
+        return (
+          <div
+            key={a.id}
+            title={a.source}
+            className="flex max-w-xs items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm"
+          >
+            {pending ? (
+              <Loader2 size={16} className="shrink-0 animate-spin text-indigo-300" />
+            ) : (
+              <Icon size={16} className="shrink-0 text-indigo-300" />
+            )}
+            <div className="min-w-0">
+              <div className="truncate">{a.title}</div>
+              <div className="text-[11px] text-slate-400">
+                {pending ? 'Loading…' : `${a.kind === 'url' ? 'URL' : 'File'}${a.chunks ? ` · ${a.chunks} chunks` : ''}`}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function MessageBubble({ message }: { message: Message }) {
   const [open, setOpen] = useState(false)
   const isUser = message.role === 'user'
   const steps = message.meta?.steps ?? []
   const sources = message.meta?.sources ?? []
+
+  const attachments = message.meta?.attachments ?? []
+  if (isUser && attachments.length > 0) {
+    return (
+      <div className="flex justify-end gap-3">
+        <AttachmentList attachments={attachments} pending={message.pending} />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700">
+          <User size={16} />
+        </div>
+      </div>
+    )
+  }
 
   if (isUser) {
     return (

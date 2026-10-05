@@ -1,4 +1,4 @@
-import type { Health, KnowledgeDocument, Session, SessionDetail, StreamEvent } from './types'
+import type { Health, KnowledgeDocument, Message, Session, SessionDetail, StreamEvent } from './types'
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
 
@@ -30,11 +30,11 @@ export const api = {
   deleteSession: (id: string) => request<void>(`/api/sessions/${id}`, { method: 'DELETE' }),
   listDocuments: (id: string) => request<KnowledgeDocument[]>(`/api/sessions/${id}/documents`),
   addUrl: (id: string, url: string) =>
-    request<KnowledgeDocument>(`/api/sessions/${id}/urls`, { method: 'POST', ...json({ url }) }),
+    request<KnowledgeDocument & { message: Message }>(`/api/sessions/${id}/urls`, { method: 'POST', ...json({ url }) }),
   uploadFiles: (id: string, files: File[]) => {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))
-    return request<{ documents: KnowledgeDocument[]; errors: string[] }>(
+    return request<{ documents: KnowledgeDocument[]; errors: string[]; message: Message | null }>(
       `/api/sessions/${id}/files`,
       { method: 'POST', body: form },
     )

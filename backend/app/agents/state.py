@@ -1,7 +1,7 @@
 import operator
 from typing import Annotated, Literal, TypedDict
 
-Route = Literal["ingest_only", "conversation", "knowledge", "web"]
+Route = Literal["ingest_only", "conversation", "knowledge", "web", "documents"]
 
 
 class AgentState(TypedDict, total=False):

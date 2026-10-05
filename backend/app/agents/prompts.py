@@ -6,10 +6,14 @@ Routes:
 - "conversation": ONLY for greetings, thanks, small talk, or questions about the user or the
   conversation itself (e.g. "what is my name?", "what did I ask before?", "summarize our chat",
   "rephrase your last answer"). These are answered from memory.
+- "documents": requests to summarize, give an overview of, list the key points of, or describe
+  the user's loaded documents/files/URLs as a whole (e.g. "summarize the document",
+  "what is this file about?", "give me the key points of report.pdf").
 - "research": everything else — any factual question, request for information, explanation,
   or question about loaded documents/URLs or the world.
 
-Respond with JSON only: {"standalone_question": "...", "route": "conversation" | "research"}"""
+Respond with JSON only:
+{"standalone_question": "...", "route": "conversation" | "documents" | "research"}"""
 
 GRADER_SYSTEM = """You are the Relevance Grader agent of a RAG system.
 Decide whether the retrieved context from the user's knowledge base (their URLs and files)
@@ -32,6 +36,12 @@ ROUTE_INSTRUCTIONS = {
         "Answer using the CONTEXT below, gathered by reading the top web search results. "
         "Cite sources inline with their number like [1] or [2]. Synthesize across sources and "
         "mention if sources disagree. If the context is insufficient, say what is missing."
+    ),
+    "documents": (
+        "The user wants a summary/overview of their loaded documents. The CONTEXT contains "
+        "excerpts from each requested document, spread across the whole document. For each "
+        "document, start with its title as a heading, then summarize its purpose and key "
+        "points. Cite with [n]. Always name the documents you are summarizing."
     ),
     "conversation": ("Answer from the conversation memory. No external context is needed."),
     "ingest_only": (

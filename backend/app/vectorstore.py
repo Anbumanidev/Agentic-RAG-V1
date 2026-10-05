@@ -62,6 +62,23 @@ class VectorStore:
             chunks.append(Chunk(text=text, metadata=dict(meta or {}), score=1.0 - float(dist)))
         return chunks
 
+    def get_document_chunks(self, session_id: str, document_id: str, limit: int) -> list[Chunk]:
+        """Return up to `limit` chunks spread evenly across the document, in reading order."""
+        result = self._collection(session_id).get(
+            where={"document_id": document_id}, include=["documents", "metadatas"]
+        )
+        chunks = sorted(
+            (
+                Chunk(text=t, metadata=dict(m or {}), score=1.0)
+                for t, m in zip(result["documents"], result["metadatas"], strict=False)
+            ),
+            key=lambda c: c.metadata.get("chunk", 0),
+        )
+        if len(chunks) <= limit:
+            return chunks
+        step = len(chunks) / limit
+        return [chunks[int(i * step)] for i in range(limit)]
+
     def delete_document(self, session_id: str, document_id: str) -> None:
         self._collection(session_id).delete(where={"document_id": document_id})
 

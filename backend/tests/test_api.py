@@ -162,3 +162,33 @@ def test_private_urls_are_rejected(client):
     for url in ("http://127.0.0.1:8000/api/sessions", "http://localhost/", "file:///etc/passwd"):
         resp = client.post(f"/api/sessions/{sid}/urls", json={"url": url})
         assert resp.status_code == 400, url
+
+
+def test_upload_is_logged_in_chat_and_summary_names_the_document(client):
+    sid = new_session(client)
+    client.post(
+        f"/api/sessions/{sid}/files",
+        files=[("files", ("old.txt", b"Old notes about gardening tomatoes.", "text/plain"))],
+    )
+    resp = client.post(
+        f"/api/sessions/{sid}/files",
+        files=[("files", ("report.txt", b"Quarterly revenue grew 12 percent.", "text/plain"))],
+    )
+    message = resp.json()["message"]
+    assert message["content"] == "Attached files: report.txt"
+    assert message["meta"]["attachments"][0]["title"] == "report.txt"
+
+    events = chat(client, sid, "Summarize the document")
+    done = events[-1]
+    assert done["route"] == "documents"
+    assert [s["title"] for s in done["sources"]] == ["report.txt"]
+    assert any(e.get("agent") == "Document Agent" for e in events if e["type"] == "step")
+
+    done = chat(client, sid, "Summarize all the files")[-1]
+    assert {s["title"] for s in done["sources"]} == {"old.txt", "report.txt"}
+
+    done = chat(client, sid, "give me an overview of old.txt")[-1]
+    assert [s["title"] for s in done["sources"]] == ["old.txt"]
+
+    history = client.get(f"/api/sessions/{sid}").json()["messages"]
+    assert history[0]["meta"]["attachments"][0]["title"] == "old.txt"

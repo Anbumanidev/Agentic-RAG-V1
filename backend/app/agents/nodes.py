@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections import defaultdict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -20,6 +21,21 @@ from app.loaders import extract_urls, split_text, strip_urls
 from app.services import Services
 
 logger = logging.getLogger(__name__)
+
+OVERVIEW_RE = re.compile(
+    r"\b(summari[sz]e|summary|overview|tl;?dr|key points|main points|gist|what is (it|this)"
+    r" about|what('s| is) in)\b",
+    re.IGNORECASE,
+)
+DOC_WORD_RE = re.compile(
+    r"\b(doc|docs|document|documents|file|files|pdf|attachment|attached|upload|uploaded|url|"
+    r"page|article|it|this|these|them)\b",
+    re.IGNORECASE,
+)
+
+
+def document_catalog(docs: list[dict]) -> str:
+    return "\n".join(f"- {d['title']} ({d['kind']}, {d['chunks']} chunks)" for d in docs)
 
 
 class IngestionAgent:
@@ -76,9 +92,11 @@ class PlannerAgent:
 
     async def __call__(self, state: AgentState) -> dict:
         question = state["question"]
-        has_docs = bool(self.s.memory.list_documents(state["session_id"]))
+        docs = self.s.memory.list_documents(state["session_id"])
+        has_docs = bool(docs)
 
         prompt = (
+            f"Loaded documents:\n{document_catalog(docs) or '(none)'}\n\n"
             f"Conversation summary: {state.get('summary') or '(none)'}\n\n"
             f"Recent conversation:\n{history_to_text(state.get('history', [])[-6:]) or '(none)'}"
             f"\n\nLatest user message: {question}"
@@ -90,15 +108,24 @@ class PlannerAgent:
             )
             data = parse_json(result.content)
             standalone = (data.get("standalone_question") or question).strip()
-            if data.get("route") == "conversation":
-                decision = "conversation"
+            if data.get("route") in {"conversation", "documents"}:
+                decision = data["route"]
         except Exception as exc:  # noqa: BLE001
             logger.warning("Planner failed, falling back to research: %s", exc)
+
+        clean = strip_urls(question)
+        names_doc = any(d["title"].lower() in clean.lower() for d in docs)
+        if has_docs and OVERVIEW_RE.search(clean) and (DOC_WORD_RE.search(clean) or names_doc):
+            decision = "documents"
+        elif decision == "documents" and not has_docs:
+            decision = "research"
 
         if state.get("just_ingested"):
             standalone = strip_urls(standalone) or standalone
         if state.get("force_web"):
             route = "web"
+        elif decision == "documents":
+            route = "documents"
         elif state.get("just_ingested"):
             route = "ingest_only" if decision == "conversation" else "knowledge"
         elif decision == "conversation":
@@ -113,6 +140,7 @@ class PlannerAgent:
             "web": "researching on the web",
             "conversation": "answering from conversation memory",
             "ingest_only": "summarizing the newly loaded content",
+            "documents": "summarizing your documents",
         }
         return {
             "standalone_question": standalone,
@@ -161,6 +189,65 @@ class RetrieverAgent:
             "steps": [
                 step(self.name, f"Retrieved {len(context)} chunk(s) from {len(sources)} source(s)")
             ],
+        }
+
+
+class DocumentAgent:
+    """Gathers excerpts spanning whole documents for summaries and overviews."""
+
+    name = "Document Agent"
+    max_docs = 6
+    chunk_budget = 14
+
+    def __init__(self, services: Services):
+        self.s = services
+
+    def _select(self, state: AgentState, docs: list[dict]) -> list[dict]:
+        question = strip_urls(state["question"]).lower()
+        named = [
+            d
+            for d in docs
+            if d["title"].lower() in question
+            or d["title"].rsplit(".", 1)[0].lower() in question
+            or d["source"].lower() in state["question"].lower()
+        ]
+        if named:
+            return named
+        if state.get("ingested"):
+            ids = {d["id"] for d in state["ingested"]}
+            return [d for d in docs if d["id"] in ids]
+        if re.search(r"\b(all|every|documents|files|docs|them|these)\b", question):
+            return docs
+        for message in reversed(self.s.memory.get_messages(state["session_id"])):
+            ids = {a["id"] for a in message["meta"].get("attachments", [])}
+            latest = [d for d in docs if d["id"] in ids]
+            if latest:
+                return latest
+        return docs[-1:]
+
+    async def __call__(self, state: AgentState) -> dict:
+        docs = self.s.memory.list_documents(state["session_id"])
+        selected = self._select(state, docs)[-self.max_docs :]
+        per_doc = max(2, self.chunk_budget // max(1, len(selected)))
+        sources, context = [], []
+        for i, doc in enumerate(selected, start=1):
+            chunks = await asyncio.to_thread(
+                self.s.store.get_document_chunks, state["session_id"], doc["id"], per_doc
+            )
+            sources.append(
+                {
+                    "index": i,
+                    "title": doc["title"],
+                    "url": doc["source"] if doc["source"].startswith("http") else None,
+                    "kind": doc["kind"],
+                }
+            )
+            context += [{"index": i, "text": c.text} for c in chunks]
+        titles = ", ".join(d["title"] for d in selected) or "none"
+        return {
+            "context": context,
+            "sources": sources,
+            "steps": [step(self.name, f"Reading {len(selected)} document(s): {titles}")],
         }
 
 
@@ -299,7 +386,13 @@ class ResponderAgent:
             system.append(f"Summary of earlier conversation:\n{state['summary']}")
         if state.get("ingest_errors"):
             system.append("Some URLs failed to load: " + "; ".join(state["ingest_errors"]))
-        if route in {"knowledge", "web", "ingest_only"}:
+        if route != "web":
+            docs = self.s.memory.list_documents(state["session_id"])
+            if docs:
+                system.append(
+                    "Documents loaded in this chat (oldest first):\n" + document_catalog(docs)
+                )
+        if route in {"knowledge", "web", "ingest_only", "documents"}:
             titles = {s["index"]: s["title"] for s in sources}
             blocks = [
                 f"[{c['index']}] ({titles.get(c['index'], '')})\n{c['text']}" for c in context
