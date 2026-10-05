@@ -25,6 +25,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const activeIdRef = useRef<string | null>(null)
 
   const accept = health?.supported_files.join(',') ?? DEFAULT_ACCEPT
 
@@ -36,7 +37,9 @@ export default function App() {
   const refreshSessions = useCallback(async () => setSessions(await api.listSessions()), [])
 
   const loadSession = useCallback(async (id: string) => {
+    activeIdRef.current = id
     const detail = await api.getSession(id)
+    if (activeIdRef.current !== id) return
     setActiveId(id)
     setMessages(detail.messages)
     setDocuments(detail.documents)
@@ -60,6 +63,7 @@ export default function App() {
   const ensureSession = async (): Promise<string> => {
     if (activeId) return activeId
     const session = await api.createSession()
+    activeIdRef.current = session.id
     setActiveId(session.id)
     setMessages([])
     setDocuments([])
@@ -80,6 +84,7 @@ export default function App() {
     if (id === activeId) {
       if (list.length) await loadSession(list[0].id)
       else {
+        activeIdRef.current = null
         setActiveId(null)
         setMessages([])
         setDocuments([])
@@ -87,7 +92,10 @@ export default function App() {
     }
   }
 
-  const refreshDocuments = async (id: string) => setDocuments(await api.listDocuments(id))
+  const refreshDocuments = async (id: string) => {
+    const docs = await api.listDocuments(id)
+    if (activeIdRef.current === id) setDocuments(docs)
+  }
 
   const send = async (text: string, forceWeb: boolean) => {
     if (streaming) return

@@ -96,10 +96,11 @@ class PlannerAgent:
             logger.warning("Planner failed, falling back to research: %s", exc)
 
         if state.get("just_ingested"):
-            route = "ingest_only" if decision == "conversation" else "knowledge"
             standalone = strip_urls(standalone) or standalone
-        elif state.get("force_web"):
+        if state.get("force_web"):
             route = "web"
+        elif state.get("just_ingested"):
+            route = "ingest_only" if decision == "conversation" else "knowledge"
         elif decision == "conversation":
             route = "conversation"
         elif has_docs:
@@ -178,9 +179,6 @@ class GraderAgent:
                 "relevant": False,
                 "steps": [step(self.name, "No relevant knowledge found — handing off to web")],
             }
-        if state.get("just_ingested"):
-            return {"relevant": True, "steps": [step(self.name, "Using freshly loaded content")]}
-
         snippets = "\n\n".join(f"[{c['index']}] {c['text'][:700]}" for c in context[:4])
         prompt = f"Question: {state['standalone_question']}\n\nContext:\n{snippets}"
         relevant, reason = True, ""

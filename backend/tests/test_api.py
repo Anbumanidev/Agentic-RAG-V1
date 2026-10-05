@@ -132,3 +132,33 @@ def test_unsupported_file_rejected(client):
         files=[("files", ("x.exe", b"MZ", "application/octet-stream"))],
     )
     assert resp.status_code == 400
+
+
+def test_force_web_applies_to_url_questions(client, monkeypatch):
+    async def fake_fetch(url, client=None, timeout=15.0):
+        return LoadedDocument(title="Vault docs", source=url, text="The secret code is 42.")
+
+    monkeypatch.setattr("app.ingestion.fetch_url", fake_fetch)
+    sid = new_session(client)
+    done = chat(client, sid, "https://example.org/vault What is the secret code?", force_web=True)[
+        -1
+    ]
+    assert done["ingested"]
+    assert done["route"] == "web"
+
+
+def test_unrelated_question_with_new_url_falls_back_to_web(client, monkeypatch):
+    async def fake_fetch(url, client=None, timeout=15.0):
+        return LoadedDocument(title="Bananas", source=url, text="Bananas are yellow fruit.")
+
+    monkeypatch.setattr("app.ingestion.fetch_url", fake_fetch)
+    sid = new_session(client)
+    done = chat(client, sid, "https://example.org/bananas why are bananas the capital of Mars?")[-1]
+    assert done["route"] == "web"
+
+
+def test_private_urls_are_rejected(client):
+    sid = new_session(client)
+    for url in ("http://127.0.0.1:8000/api/sessions", "http://localhost/", "file:///etc/passwd"):
+        resp = client.post(f"/api/sessions/{sid}/urls", json={"url": url})
+        assert resp.status_code == 400, url

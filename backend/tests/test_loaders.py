@@ -37,3 +37,10 @@ def test_unsupported_and_empty():
 def test_split_text():
     chunks = split_text("word " * 1000, 200, 20)
     assert len(chunks) > 5
+
+
+def test_pdf_filename_ignores_query():
+    from app.loaders import _pdf_filename
+
+    assert _pdf_filename("https://x.org/report.pdf?download=1") == "report.pdf"
+    assert _pdf_filename("https://x.org/download?id=3") == "document.pdf"

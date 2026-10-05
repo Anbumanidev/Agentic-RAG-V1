@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from app.loaders import USER_AGENT, html_to_text
+from app.loaders import USER_AGENT, html_to_text, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +75,12 @@ class WebSearcher:
     ) -> list[WebPage]:
         """Fetch and extract the readable content of every search result concurrently."""
         async with httpx.AsyncClient(
-            follow_redirects=True, timeout=self.timeout, headers={"User-Agent": USER_AGENT}
+            timeout=self.timeout, headers={"User-Agent": USER_AGENT}
         ) as client:
 
             async def fetch(result: SearchResult) -> WebPage:
                 try:
-                    resp = await client.get(result.url)
+                    resp = await safe_get(client, result.url)
                     resp.raise_for_status()
                     if "html" not in resp.headers.get("content-type", "html"):
                         raise ValueError("non-HTML content")

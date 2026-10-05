@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from collections import defaultdict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -14,14 +16,19 @@ class MemoryAgent:
 
     def __init__(self, services: Services):
         self.s = services
+        self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def update(self, session_id: str) -> None:
+        async with self._locks[session_id]:
+            await self._update(session_id)
+
+    async def _update(self, session_id: str) -> None:
         session = self.s.memory.get_session(session_id)
         if not session:
             return
         messages = self.s.memory.get_messages(session_id)
         cutoff = len(messages) - self.s.settings.memory_window
-        if cutoff - session["summarized_count"] < 4:
+        if cutoff <= session["summarized_count"]:
             return
         new = messages[session["summarized_count"] : cutoff]
         prompt = (

@@ -97,6 +97,7 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `WEB_SEARCH_RESULTS` | `10` | Pages to search & read for web answers |
 | `RETRIEVAL_K` / `MIN_SIMILARITY` | `6` / `0.3` | Knowledge-base retrieval |
 | `MEMORY_WINDOW` | `10` | Recent messages sent to the LLM; older ones are summarized |
+| `CORS_ORIGINS` | localhost:5173 / :3000 | JSON list of allowed browser origins |
 | `DATA_DIR` | `./data` | SQLite DB, Chroma index and model cache |
 
 ## API

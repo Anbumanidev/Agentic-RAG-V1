@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     memory_window: int = 10
     max_upload_mb: int = 25
 
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ]
 
     @property
     def sqlite_path(self) -> Path:

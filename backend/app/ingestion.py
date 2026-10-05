@@ -2,7 +2,7 @@
 
 import asyncio
 
-from app.loaders import LoadedDocument, fetch_url, load_file, split_text
+from app.loaders import LoadedDocument, LoaderError, fetch_url, load_file, split_text
 from app.services import Services
 
 
@@ -11,12 +11,11 @@ class Ingestor:
         self.s = services
 
     async def _index(self, session_id: str, kind: str, doc: LoadedDocument) -> dict:
-        existing = self.s.memory.find_document(session_id, doc.source)
-        if existing:
-            await asyncio.to_thread(self.s.store.delete_document, session_id, existing["id"])
-            self.s.memory.delete_document(existing["id"])
-
         chunks = split_text(doc.text, self.s.settings.chunk_size, self.s.settings.chunk_overlap)
+        if not chunks:
+            raise LoaderError(f"No extractable text found in {doc.title}")
+        existing = self.s.memory.find_document(session_id, doc.source)
+
         record = self.s.memory.add_document(
             session_id, kind, doc.source, doc.title, len(chunks), len(doc.text)
         )
@@ -30,7 +29,16 @@ class Ingestor:
             }
             for i in range(len(chunks))
         ]
-        await asyncio.to_thread(self.s.store.add, session_id, chunks, metadatas)
+        try:
+            await asyncio.to_thread(self.s.store.add, session_id, chunks, metadatas)
+        except Exception:
+            await asyncio.to_thread(self.s.store.delete_document, session_id, record["id"])
+            self.s.memory.delete_document(record["id"])
+            raise
+
+        if existing:
+            await asyncio.to_thread(self.s.store.delete_document, session_id, existing["id"])
+            self.s.memory.delete_document(existing["id"])
         record["preview"] = chunks[:4]
         return record
 

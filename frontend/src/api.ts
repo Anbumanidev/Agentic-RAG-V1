@@ -58,6 +58,7 @@ export const api = {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let finished = false
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -67,8 +68,12 @@ export const api = {
         const raw = buffer.slice(0, idx)
         buffer = buffer.slice(idx + 2)
         const line = raw.split('\n').find((l) => l.startsWith('data: '))
-        if (line) onEvent(JSON.parse(line.slice(6)) as StreamEvent)
+        if (!line) continue
+        const event = JSON.parse(line.slice(6)) as StreamEvent
+        if (event.type === 'done') finished = true
+        onEvent(event)
       }
     }
+    if (!finished) throw new Error('Connection closed before the answer finished')
   },
 }
