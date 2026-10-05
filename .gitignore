@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Agentic RAG
+backend/data/
+data/
+node_modules/
+frontend/dist/
